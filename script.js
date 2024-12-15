@@ -1,11 +1,8 @@
+let initialAmount = 9500;
+
 function switchTab(tab) {
-    document.querySelectorAll('.tab-content').forEach(content => {
-        content.classList.remove('active');
-    });
-    document.querySelectorAll('.nav-tabs button').forEach(button => {
-        button.classList.remove('active');
-    });
-    
+    document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+    document.querySelectorAll('.nav-tabs button').forEach(button => button.classList.remove('active'));
     document.getElementById(`${tab}-tab`).classList.add('active');
     document.querySelector(`.nav-tabs button:nth-child(${tab === 'calculator' ? '1' : '2'})`).classList.add('active');
 }
@@ -22,20 +19,52 @@ function updateCalculations() {
     const targetPercent = parseFloat(document.getElementById('target-percent').value);
     const stopLossPercent = parseFloat(document.getElementById('stop-loss-percent').value);
 
-    const targetValue = document.getElementById('target-value');
-    const stopLossValue = document.getElementById('stop-loss-value');
-
     if (amount) {
-        const targetAmount = (amount * targetPercent / 100);
-        const stopLossAmount = (amount * stopLossPercent / 100);
-        targetValue.textContent = `₹${formatNumber(targetAmount)}`;
-        stopLossValue.textContent = `₹${formatNumber(stopLossAmount)}`;
+        document.getElementById('target-value').textContent = `₹${formatNumber(amount * targetPercent / 100)}`;
+        document.getElementById('stop-loss-value').textContent = `₹${formatNumber(amount * stopLossPercent / 100)}`;
     } else {
-        targetValue.textContent = '-';
-        stopLossValue.textContent = '-';
+        document.getElementById('target-value').textContent = '-';
+        document.getElementById('stop-loss-value').textContent = '-';
     }
-
     simulateTrades();
+}
+
+function createEditableCell(amount) {
+    const cell = document.createElement('td');
+    const editableSpan = document.createElement('span');
+    editableSpan.className = 'editable';
+    editableSpan.textContent = formatNumber(amount);
+    
+    editableSpan.onclick = function() {
+        const input = document.createElement('input');
+        input.type = 'number';
+        input.className = 'editable-input';
+        input.value = amount;
+        
+        input.onblur = function() {
+            const newAmount = parseFloat(this.value);
+            if (!isNaN(newAmount) && newAmount > 0) {
+                initialAmount = newAmount;
+                simulateTrades();
+            } else {
+                editableSpan.textContent = formatNumber(amount);
+            }
+        };
+
+        input.onkeypress = function(e) {
+            if (e.key === 'Enter') {
+                this.blur();
+            }
+        };
+
+        cell.innerHTML = '';
+        cell.appendChild(input);
+        input.focus();
+        input.select();
+    };
+
+    cell.appendChild(editableSpan);
+    return cell;
 }
 
 function shuffleArray(array) {
@@ -47,53 +76,54 @@ function shuffleArray(array) {
 }
 
 function simulateTrades() {
-    const FIXED_AMOUNT = 9500;
     const targetPercent = parseFloat(document.getElementById('target-percent').value) / 100;
     const stopLossPercent = parseFloat(document.getElementById('stop-loss-percent').value) / 100;
-    
     const tbody = document.querySelector('#trade-table tbody');
     tbody.innerHTML = '';
     
     const numTrades = 75;
-    let currentAmount = FIXED_AMOUNT;
-    const probRatio = document.querySelector('input[name="probability"]:checked').value;
-    const [winRatio, loseRatio] = probRatio.split(':').map(x => parseInt(x));
+    let currentAmount = initialAmount;
+    const [winRatio, loseRatio] = document.querySelector('input[name="probability"]:checked').value.split(':').map(x => parseInt(x));
+    const winCount = Math.round((numTrades * winRatio) / (winRatio + loseRatio));
+    const results = shuffleArray([...Array(winCount).fill(true), ...Array(numTrades - winCount).fill(false)]);
     
-    // Create array of results based on ratio
-    const totalTrades = winRatio + loseRatio;
-    const winCount = Math.round((numTrades * winRatio) / totalTrades);
-    const loseCount = numTrades - winCount;
-    
-    let results = [
-        ...Array(winCount).fill(true),
-        ...Array(loseCount).fill(false)
-    ];
-    results = shuffleArray(results);
-
     for (let i = 0; i < numTrades; i++) {
         const isWin = results[i];
-        const profitLoss = isWin ? 
-            currentAmount * targetPercent : 
-            -(currentAmount * stopLossPercent);
-        
+        const profitLoss = isWin ? currentAmount * targetPercent : -(currentAmount * stopLossPercent);
         const endAmount = currentAmount + profitLoss;
-        const changePercent = isWin ? targetPercent * 100 : -stopLossPercent * 100;
-
-        const row = tbody.insertRow();
-        row.innerHTML = `
-            <td>${i + 1}</td>
-            <td>${formatNumber(currentAmount)}</td>
+        const changePercent = (profitLoss / currentAmount) * 100;
+        
+        const row = document.createElement('tr');
+        
+        // Add trade number
+        const numberCell = document.createElement('td');
+        numberCell.textContent = i + 1;
+        row.appendChild(numberCell);
+        
+        // Add amount cell (editable for first row)
+        if (i === 0) {
+            row.appendChild(createEditableCell(currentAmount));
+        } else {
+            const amountCell = document.createElement('td');
+            amountCell.textContent = formatNumber(currentAmount);
+            row.appendChild(amountCell);
+        }
+        
+        // Add result, P/L, change%, and end amount
+        const resultHTML = `
             <td class="${isWin ? 'green' : 'red'}">${isWin ? 'WIN' : 'LOSS'}</td>
             <td class="${isWin ? 'green' : 'red'}">${isWin ? '' : '-'}${formatNumber(Math.abs(profitLoss))}</td>
             <td class="${isWin ? 'green' : 'red'}">${changePercent.toFixed(2)}%</td>
             <td>${formatNumber(endAmount)}</td>
         `;
-
+        row.insertAdjacentHTML('beforeend', resultHTML);
+        tbody.appendChild(row);
+        
         currentAmount = endAmount;
     }
-
-    const totalPL = currentAmount - FIXED_AMOUNT;
-    const totalPercentage = (totalPL / FIXED_AMOUNT) * 100;
+    
+    const totalPL = currentAmount - initialAmount;
+    const totalPercentage = (totalPL / initialAmount) * 100;
     
     document.getElementById('final-balance').textContent = formatNumber(currentAmount);
     document.getElementById('total-pl').textContent = `${totalPL >= 0 ? '+' : '-'}${formatNumber(Math.abs(totalPL))}`;
@@ -105,9 +135,7 @@ function simulateTrades() {
 document.getElementById('trading-amount').addEventListener('input', updateCalculations);
 document.getElementById('target-percent').addEventListener('change', updateCalculations);
 document.getElementById('stop-loss-percent').addEventListener('change', updateCalculations);
-document.querySelectorAll('input[name="probability"]').forEach(radio => {
-    radio.addEventListener('change', updateCalculations);
-});
+document.querySelectorAll('input[name="probability"]').forEach(radio => radio.addEventListener('change', updateCalculations));
 
-// Initialize with default values
+// Initialize calculations
 updateCalculations();
